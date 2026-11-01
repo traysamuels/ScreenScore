@@ -16,19 +16,41 @@ jobs:
       - name: Auto-Patch Source Files
         run: |
           python3 -c "
-          import re, os
+          import os, re
+
+          # 1. Fix JucePlugin_Name in PluginProcessor.cpp
+          pp = 'VidSyncVST/Source/PluginProcessor.cpp'
+          if os.path.exists(pp):
+              with open(pp, 'r') as f: c = f.read()
+              c = c.replace('return JucePlugin_Name;', 'return \"VidSyncVST\";')
+              with open(pp, 'w') as f: f.write(c)
+              print('Patched PluginProcessor.cpp')
+
+          # 2. Fix multi-line drawText in VideoPlayerComponent.cpp
           vp = 'VidSyncVST/Source/VideoPlayerComponent.cpp'
           if os.path.exists(vp):
               with open(vp, 'r') as f: c = f.read()
-              c = re.sub(r'g\.drawText\(\"No Video Loaded\r?\n\s*Click \'Open Video File\' above to load a movie reel\"', r'g.drawText(\"No Video Loaded\\\\nClick \'Open Video File\' above to load a movie reel\"', c)
+              c = re.sub(r'g\.drawText\(\"No Video Loaded[\s\S]*?videoArea,', 'g.drawText(\"No Video Loaded\", videoArea,', c)
               with open(vp, 'w') as f: f.write(c)
+              print('Patched VideoPlayerComponent.cpp')
 
-          mv = 'VidSyncVST/Source/MacVideoView.mm'
-          if os.path.exists(mv):
-              with open(mv, 'r') as f: m = f.read()
-              if '<cmath>' not in m:
-                  m = '#include <cmath>\n' + m
-                  with open(mv, 'w') as f: f.write(m)
+          # 3. Add juce_graphics to MacVideoView.h for Point<int>
+          mh = 'VidSyncVST/Source/MacVideoView.h'
+          if os.path.exists(mh):
+              with open(mh, 'r') as f: c = f.read()
+              if 'juce_graphics' not in c:
+                  c = '#include <juce_graphics/juce_graphics.h>\n' + c
+                  with open(mh, 'w') as f: f.write(c)
+              print('Patched MacVideoView.h')
+
+          # 4. Add <cmath> to MacVideoView.mm
+          mm = 'VidSyncVST/Source/MacVideoView.mm'
+          if os.path.exists(mm):
+              with open(mm, 'r') as f: c = f.read()
+              if '<cmath>' not in c:
+                  c = '#include <cmath>\n' + c
+                  with open(mm, 'w') as f: f.write(c)
+              print('Patched MacVideoView.mm')
           "
 
       - name: Configure CMake
@@ -40,19 +62,22 @@ jobs:
 
       - name: Build VST3 Plugin
         run: |
-          cmake --build build --config Release --target VidSyncVST_VST3
+          cmake --build build --config Release --target VidSyncVST_VST3 -- -j4
 
       - name: Package DMG Installer
         run: |
           mkdir -p dmg_root
+
           VST3_PATH=$(find build -name "VidSyncVST.vst3" -type d | head -n 1)
           if [ -z "$VST3_PATH" ]; then
             echo "Error: VidSyncVST.vst3 not found in build directory!"
             exit 1
           fi
           echo "Found VST3 at: $VST3_PATH"
+
           ditto "$VST3_PATH" dmg_root/VidSyncVST.vst3
-          ln -s "/Library/Audio/Plug-Ins/VST3" dmg_root/VST3
+          ln -s "/Library/Audio/Plug-Ins/VST3" dmg_root/"Drag to VST3 Folder"
+
           hdiutil create \
             -volname "VidSyncVST Installer" \
             -srcfolder dmg_root \
