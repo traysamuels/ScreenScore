@@ -54,8 +54,12 @@ if (APPLE)
             Source/MacVideoView.h
             Source/MacVideoView.mm
     )
-    # Objective-C++ ARC and macOS Frameworks
-    target_compile_options(VidSyncVST PRIVATE -fobjc-arc)
+
+    # JUCE 8.0.4's macOS native files still use manual Objective-C memory management,
+    # so this target must not enable ARC. Enabling ARC on the whole target causes the
+    # compile failures seen in juce_ObjCHelpers_mac.h / juce_SystemTrayIcon_mac.cpp.
+    target_compile_options(VidSyncVST PRIVATE -fno-objc-arc)
+
     target_link_libraries(VidSyncVST
         PRIVATE
             "-framework AVFoundation"
