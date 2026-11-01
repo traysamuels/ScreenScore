@@ -1,42 +1,49 @@
-name: Build macOS VST3 & DMG
 
-on: [push, workflow_dispatch]
+name: Build VidSyncVST Mac Installer
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Install Tools
-        run: brew install create-dmg cmake
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
 
       - name: Configure CMake
         run: |
-          cmake -B build -G Xcode VidSyncVST \
+          cmake -S VidSyncVST -B build -G Xcode \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
             -DCMAKE_OSX_DEPLOYMENT_TARGET="10.15"
 
-      - name: Build VST3
-        run: cmake --build build --config Release --target VidSyncVST_VST3
+      - name: Build VST3 Plugin
+        run: |
+          cmake --build build \
+            --config Release \
+            --target VidSyncVST_VST3
 
-      - name: Package DMG Installer
+      - name: Package DMG
         run: |
           mkdir -p dmg_root
-          cp -R build/VidSyncVST_artefacts/Release/VST3/VidSyncVST.vst3 dmg_root/
-          ln -s /Library/Audio/Plug-Ins/VST3 dmg_root/"VST3 Plugins Folder"
-          create-dmg \
-            --volname "VidSyncVST Installer" \
-            --window-pos 200 120 \
-            --window-size 600 400 \
-            --icon-size 100 \
-            --app-drop-link 420 185 \
-            "VidSyncVST_Mac.dmg" \
-            dmg_root/
+
+          ditto build/VidSyncVST_artefacts/Release/VST3/VidSyncVST.vst3 \
+            dmg_root/VidSyncVST.vst3
+
+          hdiutil create \
+            -volname "VidSyncVST Installer" \
+            -srcfolder dmg_root \
+            -ov \
+            -format UDZO \
+            VidSyncVST_Mac.dmg
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
           name: VidSyncVST-Mac-Installer
-          path: "*.dmg"
+          path: VidSyncVST_Mac.dmg
+          if-no-files-found: error
