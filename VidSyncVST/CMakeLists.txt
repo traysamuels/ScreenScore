@@ -30,7 +30,7 @@ juce_add_plugin(VidSyncVST
     EDITOR_WANTS_KEYBOARD_FOCUS TRUE
     PLUGIN_MANUFACTURER_CODE Vdsy
     PLUGIN_CODE Vds1
-    FORMATS VST3 AU
+    FORMATS VST3 VST
     PRODUCT_NAME "VidSyncVST"
     DESCRIPTION "Hardware-accelerated DAW Video Sync Plugin for Reason 13 & macOS"
 )
