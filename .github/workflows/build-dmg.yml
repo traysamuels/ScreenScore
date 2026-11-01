@@ -1,4 +1,3 @@
-
 name: Build VidSyncVST Mac Installer
 
 on:
@@ -19,7 +18,10 @@ jobs:
           cmake -S VidSyncVST -B build -G Xcode \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET="10.15"
+            -DCMAKE_OSX_DEPLOYMENT_TARGET="10.15" \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY=""
 
       - name: Build VST3 Plugin
         run: |
@@ -31,8 +33,17 @@ jobs:
         run: |
           mkdir -p dmg_root
 
-          ditto build/VidSyncVST_artefacts/Release/VST3/VidSyncVST.vst3 \
-            dmg_root/VidSyncVST.vst3
+          VST3_PATH=$(find build -name "VidSyncVST.vst3" -type d | head -n 1)
+          if [ -z "$VST3_PATH" ]; then
+            echo "Error: VidSyncVST.vst3 not found in build directory!"
+            exit 1
+          fi
+          echo "Found VST3 at: $VST3_PATH"
+
+          ditto "$VST3_PATH" dmg_root/VidSyncVST.vst3
+
+          # Create a link to the user's VST3 directory for easy drag-and-drop install
+          ln -s "/Library/Audio/Plug-Ins/VST3" dmg_root/VST3
 
           hdiutil create \
             -volname "VidSyncVST Installer" \
