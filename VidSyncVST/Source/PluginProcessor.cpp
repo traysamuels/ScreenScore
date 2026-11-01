@@ -1,0 +1,142 @@
+#include "PluginProcessor.h"
+#include "PluginEditor.h"
+
+juce::AudioProcessorValueTreeState::ParameterLayout VidSyncAudioProcessor::createParameterLayout() {
+    std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
+
+    // Start Offset in seconds (-3600.0s to +3600.0s)
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{"offset", 1},
+        "Start Offset (sec)",
+        juce::NormalisableRange<float>(-3600.0f, 3600.0f, 0.01f),
+        0.0f
+    ));
+
+    // SMPTE Framerate selector: 23.976, 24, 25, 29.97, 30, 60
+    juce::StringArray fpsOptions { "23.976 fps", "24 fps (Film)", "25 fps (PAL)", "29.97 fps (NTSC)", "30 fps", "60 fps" };
+    params.push_back(std::make_unique<juce::AudioParameterChoice>(
+        juce::ParameterID{"fps", 1},
+        "SMPTE Frame Rate",
+        fpsOptions,
+        1 // Default: 24 fps
+    ));
+
+    // Audio volume from video (0.0 to 1.0)
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{"volume", 1},
+        "Video Audio Volume",
+        juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f),
+        1.0f
+    ));
+
+    // Video Mute toggle
+    params.push_back(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{"mute", 1},
+        "Mute Video Audio",
+        false
+    ));
+
+    return { params.begin(), params.end() };
+}
+
+VidSyncAudioProcessor::VidSyncAudioProcessor()
+    : AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true)),
+      apvts(*this, nullptr, "Parameters", createParameterLayout())
+{
+}
+
+VidSyncAudioProcessor::~VidSyncAudioProcessor() = default;
+
+const juce::String VidSyncAudioProcessor::getName() const { return JucePlugin_Name; }
+bool VidSyncAudioProcessor::acceptsMidi() const { return true; }
+bool VidSyncAudioProcessor::producesMidi() const { return false; }
+bool VidSyncAudioProcessor::isMidiEffect() const { return false; }
+double VidSyncAudioProcessor::getTailLengthSeconds() const { return 0.0; }
+
+int VidSyncAudioProcessor::getNumPrograms() { return 1; }
+int VidSyncAudioProcessor::getCurrentProgram() { return 0; }
+void VidSyncAudioProcessor::setCurrentProgram(int) {}
+const juce::String VidSyncAudioProcessor::getProgramName(int) { return {}; }
+void VidSyncAudioProcessor::changeProgramName(int, const juce::String&) {}
+
+void VidSyncAudioProcessor::prepareToPlay(double, int) {}
+void VidSyncAudioProcessor::releaseResources() {}
+
+bool VidSyncAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
+    const auto& mainOutput = layouts.getMainOutputChannelSet();
+    return mainOutput == juce::AudioChannelSet::stereo() || mainOutput == juce::AudioChannelSet::disabled();
+}
+
+void VidSyncAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages) {
+    juce::ScopedNoDenormals noDenormals;
+    auto totalNumOutputChannels = getTotalNumOutputChannels();
+
+    // Clear audio buffer (the plugin outputs silence to the DAW track, or can route audio)
+    for (auto i = 0; i < totalNumOutputChannels; ++i)
+        buffer.clear(i, 0, buffer.getNumSamples());
+
+    // Query DAW transport playhead
+    if (auto* playHead = getPlayHead()) {
+        if (auto posInfo = playHead->getPosition()) {
+            syncValid.store(true);
+            hostIsPlaying.store(posInfo->getIsPlaying());
+
+            if (auto timeSec = posInfo->getTimeInSeconds())
+                hostTimeSeconds.store(*timeSec);
+
+            if (auto ppq = posInfo->getPpqPosition())
+                hostPpq.store(*ppq);
+
+            if (auto bpm = posInfo->getBpm())
+                hostBpm.store(*bpm);
+        } else {
+            syncValid.store(false);
+        }
+    } else {
+        syncValid.store(false);
+    }
+
+    // Optional MIDI Cueing: VidPlayVST supports setting start offset with a MIDI C note.
+    for (const auto metadata : midiMessages) {
+        auto msg = metadata.getMessage();
+        if (msg.isNoteOn() && (msg.getNoteNumber() % 12 == 0)) { // Any C note
+            // Cue hit point can be logged or used to align start offset
+        }
+    }
+}
+
+PlayheadSyncState VidSyncAudioProcessor::getSyncState() const {
+    PlayheadSyncState state;
+    state.valid = syncValid.load();
+    state.isPlaying = hostIsPlaying.load();
+    state.timeInSeconds = hostTimeSeconds.load();
+    state.ppqPosition = hostPpq.load();
+    state.bpm = hostBpm.load();
+    return state;
+}
+
+bool VidSyncAudioProcessor::hasEditor() const { return true; }
+juce::AudioProcessorEditor* VidSyncAudioProcessor::createEditor() {
+    return new VidSyncAudioProcessorEditor(*this);
+}
+
+void VidSyncAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
+    auto state = apvts.copyState();
+    state.setProperty("videoPath", lastLoadedFilePath, nullptr);
+    std::unique_ptr<juce::XmlElement> xml(state.createXml());
+    copyXmlToBinary(*xml, destData);
+}
+
+void VidSyncAudioProcessor::setStateInformation(const void* data, int sizeInBytes) {
+    std::unique_ptr<juce::XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));
+    if (xmlState != nullptr && xmlState->hasTagName(apvts.state.getType())) {
+        auto state = juce::ValueTree::fromXml(*xmlState);
+        apvts.replaceState(state);
+        lastLoadedFilePath = state.getProperty("videoPath", "").toString();
+    }
+}
+
+// Plugin instantiation hook
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() {
+    return new VidSyncAudioProcessor();
+}
