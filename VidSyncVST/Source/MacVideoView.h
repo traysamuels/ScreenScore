@@ -1,4 +1,6 @@
 #pragma once
+
+#include <juce_graphics/juce_graphics.h>
 #include <juce_gui_extra/juce_gui_extra.h>
 
 class MacVideoBackend {
