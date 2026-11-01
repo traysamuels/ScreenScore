@@ -13,38 +13,46 @@ jobs:
       - name: Checkout Source
         uses: actions/checkout@v4
 
+      - name: Auto-Patch Source Files
+        run: |
+          python3 -c "
+          import re, os
+          vp = 'VidSyncVST/Source/VideoPlayerComponent.cpp'
+          if os.path.exists(vp):
+              with open(vp, 'r') as f: c = f.read()
+              c = re.sub(r'g\.drawText\(\"No Video Loaded\r?\n\s*Click \'Open Video File\' above to load a movie reel\"', r'g.drawText(\"No Video Loaded\\\\nClick \'Open Video File\' above to load a movie reel\"', c)
+              with open(vp, 'w') as f: f.write(c)
+
+          mv = 'VidSyncVST/Source/MacVideoView.mm'
+          if os.path.exists(mv):
+              with open(mv, 'r') as f: m = f.read()
+              if '<cmath>' not in m:
+                  m = '#include <cmath>\n' + m
+                  with open(mv, 'w') as f: f.write(m)
+          "
+
       - name: Configure CMake
         run: |
-          cmake -S VidSyncVST -B build -G Xcode \
+          rm -rf build
+          cmake -S VidSyncVST -B build \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET="10.15" \
-            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO \
-            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
-            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY=""
+            -DCMAKE_OSX_DEPLOYMENT_TARGET="10.15"
 
       - name: Build VST3 Plugin
         run: |
-          cmake --build build \
-            --config Release \
-            --target VidSyncVST_VST3
+          cmake --build build --config Release --target VidSyncVST_VST3
 
-      - name: Package DMG
+      - name: Package DMG Installer
         run: |
           mkdir -p dmg_root
-
           VST3_PATH=$(find build -name "VidSyncVST.vst3" -type d | head -n 1)
           if [ -z "$VST3_PATH" ]; then
             echo "Error: VidSyncVST.vst3 not found in build directory!"
             exit 1
           fi
           echo "Found VST3 at: $VST3_PATH"
-
           ditto "$VST3_PATH" dmg_root/VidSyncVST.vst3
-
-          # Create a link to the user's VST3 directory for easy drag-and-drop install
           ln -s "/Library/Audio/Plug-Ins/VST3" dmg_root/VST3
-
           hdiutil create \
             -volname "VidSyncVST Installer" \
             -srcfolder dmg_root \
@@ -52,7 +60,7 @@ jobs:
             -format UDZO \
             VidSyncVST_Mac.dmg
 
-      - name: Upload DMG
+      - name: Upload DMG Artifact
         uses: actions/upload-artifact@v4
         with:
           name: VidSyncVST-Mac-Installer
