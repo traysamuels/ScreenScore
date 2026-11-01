@@ -1,5 +1,7 @@
 #include "MacVideoView.h"
 
+#include <cmath>
+
 #if JUCE_MAC
 #import <AVFoundation/AVFoundation.h>
 #import <AVKit/AVKit.h>
@@ -75,11 +77,9 @@ struct MacVideoBackend::Impl {
             playerItem = [AVPlayerItem playerItemWithAsset:asset];
             [player replaceCurrentItemWithPlayerItem:playerItem];
 
-            // Extract duration
             CMTime dur = asset.duration;
             durationSeconds = CMTimeGetSeconds(dur);
 
-            // Extract track dimensions
             NSArray<AVAssetTrack*>* tracks = [asset tracksWithMediaType:AVMediaTypeVideo];
             if (tracks.count > 0) {
                 CGSize size = tracks.firstObject.naturalSize;
@@ -106,11 +106,9 @@ struct MacVideoBackend::Impl {
             CMTime cmTarget = CMTimeMakeWithSeconds(targetTime, 60000);
 
             if (isPlaying) {
-                // When DAW transport is playing:
                 double currentVideoTime = CMTimeGetSeconds(player.currentTime);
                 double drift = std::abs(currentVideoTime - targetTime);
 
-                // If transport just started or jumped (drift > 40ms / 1 frame)
                 if (!wasHostPlaying || drift > 0.04) {
                     [player seekToTime:cmTarget
                        toleranceBefore:kCMTimeZero
@@ -125,13 +123,11 @@ struct MacVideoBackend::Impl {
                 }
                 wasHostPlaying = true;
             } else {
-                // When DAW transport is stopped (user scrubbing or clicking Reason's timeline):
                 if (wasHostPlaying) {
                     [player pause];
                     wasHostPlaying = false;
                 }
 
-                // Instant frame-accurate seek so composer sees the current picture
                 [player seekToTime:cmTarget
                    toleranceBefore:kCMTimeZero
                     toleranceAfter:kCMTimeZero];
@@ -183,7 +179,6 @@ void* MacVideoBackend::getNativeView() const { return (__bridge void*)pImpl->nat
 bool MacVideoBackend::isLoaded() const { return pImpl->loaded; }
 
 #else
-// Fallback stub for non-Mac compilation checks
 struct MacVideoBackend::Impl {};
 MacVideoBackend::MacVideoBackend() {}
 MacVideoBackend::~MacVideoBackend() {}
