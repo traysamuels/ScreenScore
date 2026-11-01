@@ -4,7 +4,6 @@
 juce::AudioProcessorValueTreeState::ParameterLayout VidSyncAudioProcessor::createParameterLayout() {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
 
-    // Start Offset in seconds (-3600.0s to +3600.0s)
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID{"offset", 1},
         "Start Offset (sec)",
@@ -12,16 +11,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout VidSyncAudioProcessor::creat
         0.0f
     ));
 
-    // SMPTE Framerate selector: 23.976, 24, 25, 29.97, 30, 60
     juce::StringArray fpsOptions { "23.976 fps", "24 fps (Film)", "25 fps (PAL)", "29.97 fps (NTSC)", "30 fps", "60 fps" };
     params.push_back(std::make_unique<juce::AudioParameterChoice>(
         juce::ParameterID{"fps", 1},
         "SMPTE Frame Rate",
         fpsOptions,
-        1 // Default: 24 fps
+        1
     ));
 
-    // Audio volume from video (0.0 to 1.0)
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID{"volume", 1},
         "Video Audio Volume",
@@ -29,7 +26,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout VidSyncAudioProcessor::creat
         1.0f
     ));
 
-    // Video Mute toggle
     params.push_back(std::make_unique<juce::AudioParameterBool>(
         juce::ParameterID{"mute", 1},
         "Mute Video Audio",
@@ -47,7 +43,7 @@ VidSyncAudioProcessor::VidSyncAudioProcessor()
 
 VidSyncAudioProcessor::~VidSyncAudioProcessor() = default;
 
-const juce::String VidSyncAudioProcessor::getName() const { return JucePlugin_Name; }
+const juce::String VidSyncAudioProcessor::getName() const { return "VidSyncVST"; }
 bool VidSyncAudioProcessor::acceptsMidi() const { return true; }
 bool VidSyncAudioProcessor::producesMidi() const { return false; }
 bool VidSyncAudioProcessor::isMidiEffect() const { return false; }
@@ -71,11 +67,9 @@ void VidSyncAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
     juce::ScopedNoDenormals noDenormals;
     auto totalNumOutputChannels = getTotalNumOutputChannels();
 
-    // Clear audio buffer (the plugin outputs silence to the DAW track, or can route audio)
     for (auto i = 0; i < totalNumOutputChannels; ++i)
         buffer.clear(i, 0, buffer.getNumSamples());
 
-    // Query DAW transport playhead
     if (auto* playHead = getPlayHead()) {
         if (auto posInfo = playHead->getPosition()) {
             syncValid.store(true);
@@ -96,11 +90,9 @@ void VidSyncAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
         syncValid.store(false);
     }
 
-    // Optional MIDI Cueing: VidPlayVST supports setting start offset with a MIDI C note.
     for (const auto metadata : midiMessages) {
         auto msg = metadata.getMessage();
-        if (msg.isNoteOn() && (msg.getNoteNumber() % 12 == 0)) { // Any C note
-            // Cue hit point can be logged or used to align start offset
+        if (msg.isNoteOn() && (msg.getNoteNumber() % 12 == 0)) {
         }
     }
 }
@@ -136,7 +128,6 @@ void VidSyncAudioProcessor::setStateInformation(const void* data, int sizeInByte
     }
 }
 
-// Plugin instantiation hook
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() {
     return new VidSyncAudioProcessor();
 }
