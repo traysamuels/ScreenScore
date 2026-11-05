@@ -36,7 +36,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout VidSyncAudioProcessor::creat
 }
 
 VidSyncAudioProcessor::VidSyncAudioProcessor()
-    : AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true)),
+    : AudioProcessor(BusesProperties()
+        .withInput("Input", juce::AudioChannelSet::stereo(), true)
+        .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       apvts(*this, nullptr, "Parameters", createParameterLayout())
 {
 }
@@ -44,7 +46,7 @@ VidSyncAudioProcessor::VidSyncAudioProcessor()
 VidSyncAudioProcessor::~VidSyncAudioProcessor() = default;
 
 const juce::String VidSyncAudioProcessor::getName() const { return "VidSyncVST"; }
-bool VidSyncAudioProcessor::acceptsMidi() const { return true; }
+bool VidSyncAudioProcessor::acceptsMidi() const { return false; }
 bool VidSyncAudioProcessor::producesMidi() const { return false; }
 bool VidSyncAudioProcessor::isMidiEffect() const { return false; }
 double VidSyncAudioProcessor::getTailLengthSeconds() const { return 0.0; }
@@ -59,16 +61,21 @@ void VidSyncAudioProcessor::prepareToPlay(double, int) {}
 void VidSyncAudioProcessor::releaseResources() {}
 
 bool VidSyncAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
-    const auto& mainOutput = layouts.getMainOutputChannelSet();
-    return mainOutput == juce::AudioChannelSet::stereo() || mainOutput == juce::AudioChannelSet::disabled();
+    const auto& input = layouts.getMainInputChannelSet();
+    const auto& output = layouts.getMainOutputChannelSet();
+    return input == juce::AudioChannelSet::stereo()
+        && output == juce::AudioChannelSet::stereo();
 }
 
-void VidSyncAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages) {
+void VidSyncAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) {
     juce::ScopedNoDenormals noDenormals;
-    auto totalNumOutputChannels = getTotalNumOutputChannels();
 
-    for (auto i = 0; i < totalNumOutputChannels; ++i)
-        buffer.clear(i, 0, buffer.getNumSamples());
+    // This is an insert effect. Preserve the incoming audio instead of clearing it.
+    // Clear only any output channels that do not have a matching input channel.
+    const auto inputChannels = getTotalNumInputChannels();
+    const auto outputChannels = getTotalNumOutputChannels();
+    for (int channel = inputChannels; channel < outputChannels; ++channel)
+        buffer.clear(channel, 0, buffer.getNumSamples());
 
     if (auto* playHead = getPlayHead()) {
         if (auto posInfo = playHead->getPosition()) {
@@ -88,12 +95,6 @@ void VidSyncAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
         }
     } else {
         syncValid.store(false);
-    }
-
-    for (const auto metadata : midiMessages) {
-        auto msg = metadata.getMessage();
-        if (msg.isNoteOn() && (msg.getNoteNumber() % 12 == 0)) {
-        }
     }
 }
 
