@@ -1,0 +1,55 @@
+name: Build ReasonVideoSync VST3
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "ReasonVideoSync/**"
+      - ".github/workflows/build-reasonvideosync-vst3.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build universal macOS VST3
+    runs-on: macos-14
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Configure CMake
+        run: |
+          cmake -S ReasonVideoSync -B build             -DCMAKE_BUILD_TYPE=Release             -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"             -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15
+
+      - name: Build VST3
+        run: cmake --build build --config Release --target ReasonVideoSync_VST3 --parallel
+
+      - name: Validate universal VST3
+        shell: bash
+        run: |
+          set -euo pipefail
+          PLUGIN="$(find build -type d -name 'ReasonVideoSync.vst3' -print -quit)"
+          test -n "$PLUGIN"
+          BINARY="$PLUGIN/Contents/MacOS/ReasonVideoSync"
+          test -f "$BINARY"
+          lipo "$BINARY" -verify_arch arm64 x86_64
+          codesign --verify --deep --strict --verbose=2 "$PLUGIN"
+          mkdir -p dist
+          ditto "$PLUGIN" "dist/ReasonVideoSync.vst3"
+
+      - name: Package artifact
+        run: |
+          cd dist
+          ditto -c -k --sequesterRsrc --keepParent ReasonVideoSync.vst3 ../ReasonVideoSync-macOS-Universal.zip
+
+      - name: Upload VST3
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReasonVideoSync-macOS-Universal
+          path: ReasonVideoSync-macOS-Universal.zip
+          if-no-files-found: error
+          retention-days: 14
