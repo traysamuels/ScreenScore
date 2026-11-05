@@ -42,10 +42,8 @@ public:
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
 
-    // Playhead state access (thread-safe for UI polling)
     PlayheadSyncState getSyncState() const;
 
-    // Parameters & properties
     juce::AudioProcessorValueTreeState apvts;
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
