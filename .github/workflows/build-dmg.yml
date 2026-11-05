@@ -31,10 +31,11 @@ jobs:
           set -euo pipefail
           VST3_PATH="$(find build -type d -name 'VidSyncVST.vst3' -print -quit)"
           test -n "$VST3_PATH"
-          BINARY="$(find "$VST3_PATH/Contents/MacOS" -type f -maxdepth 1 -print -quit)"
+          BINARY="$(find "$VST3_PATH/Contents/MacOS" -maxdepth 1 -type f -print -quit)"
           test -n "$BINARY"
           plutil -lint "$VST3_PATH/Contents/Info.plist"
-          lipo -verify_arch arm64 x86_64 "$BINARY"
+          # Apple's lipo syntax expects the input file before -verify_arch.
+          lipo "$BINARY" -verify_arch arm64 x86_64
           echo "Validated: $VST3_PATH"
           ditto "$VST3_PATH" VidSyncVST.vst3
 
