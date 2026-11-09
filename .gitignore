@@ -1,0 +1,5 @@
+build/
+VidSyncVST/build/
+*.vst3
+*.dmg
+.DS_Store

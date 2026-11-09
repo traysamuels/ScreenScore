@@ -37,7 +37,9 @@ VidSyncVST/
 │   ├── MacVideoView.h         # Objective-C++ video bridge header
 │   ├── MacVideoView.mm        # Native AVPlayer & AVPlayerLayer hardware rendering
 │   ├── DetachedVideoWindow.h  # Secondary floating monitor window
-│   └── TimecodeOverlay.h      # SMPTE timecode math & formatting
+│   ├── TimecodeOverlay.h      # SMPTE timecode formatting
+│   └── TimecodeMath.h         # Frame-rate and drop-frame counting
+├── tests/timecode_test.cpp    # SMPTE counter checks (no JUCE required)
 └── README.md
 ```
 
@@ -46,7 +48,7 @@ VidSyncVST/
 ## Prerequisites for Building on macOS
 
 1. **macOS 10.15 (Catalina) or newer** (compatible through macOS Sonoma, Sequoia, and later).
-2. **Xcode** (or Xcode Command Line Tools: `xcode-select --install`).
+2. **Xcode** or the Xcode Command Line Tools. Run `xcode-select --install` and wait until it finishes. `xcode-select -p` must print a developer directory before you configure. If `/usr/bin/cc` only reports "No developer tools were found", CMake will fail.
 3. **CMake 3.22+** (install via `brew install cmake`).
 4. **Git** (for downloading JUCE automatically).
 
@@ -62,19 +64,22 @@ chmod +x build_mac.sh
 ```
 
 This script will:
-1. Automatically fetch the latest stable **JUCE** framework via CMake.
-2. Compile a Universal 2 binary (`arm64` for Apple Silicon + `x86_64` for Intel).
-3. Install `VidSyncVST.vst3` directly into:
-   `~/Library/Audio/Plug-Ins/VST3/`
+1. Delete an incomplete `build/` directory left by a failed configure. A checked-in Unix Makefiles cache used to make `cmake -G Xcode` stop immediately.
+2. Fetch **JUCE 8.0.4** via CMake.
+3. Compile a Universal 2 binary (`arm64` for Apple Silicon + `x86_64` for Intel).
+4. Install `VidSyncVST.vst3` into the folder Reason actually scans:
+   `/Library/Audio/Plug-Ins/VST3/`
+
+   Reason 13 does **not** scan `~/Library/Audio/Plug-Ins/VST3` unless you add that folder yourself. Writing to the system folder asks for an administrator password when needed.
 
 ---
 
 ## How to Use in Reason 13
 
-1. **Launch Reason 13**:
-   - Reason 13 automatically scans `~/Library/Audio/Plug-Ins/VST3`.
+1. **Quit and relaunch Reason 13**:
+   - Reason scans `/Library/Audio/Plug-Ins/VST3` at launch.
 2. **Insert the Plugin**:
-   - In Reason's Browser, go to **Effects** or **Instruments** > **VST3 Plugins** > **VidSync** > **VidSyncVST**.
+   - In Reason's Browser, go to **Effects** > **VST3 Plugins** > **VidSync** > **VidSyncVST**.
    - Drag it into your Reason Rack.
 3. **Open the Interface**:
    - Click **Open Plugin Window** on the Reason Rack device.
