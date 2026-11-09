@@ -29,31 +29,80 @@ BUILD_DIR="${PROJECT_DIR}/build"
 SYSTEM_VST3_DIR="/Library/Audio/Plug-Ins/VST3"
 USER_VST3_DIR="${HOME}/Library/Audio/Plug-Ins/VST3"
 
-# A failed configure (or the Unix Makefiles cache that used to be checked in)
-# makes `cmake -G Xcode` refuse to run. An incomplete build directory has no
-# generated Xcode project, so start that directory over.
-if [[ -d "${BUILD_DIR}" && ! -d "${BUILD_DIR}/VidSyncVST.xcodeproj" ]]; then
-    echo "Removing incomplete CMake build directory: ${BUILD_DIR}"
-    rm -rf "${BUILD_DIR}"
+# Full Xcode provides the Xcode generator. Command Line Tools alone can still
+# compile with Unix Makefiles, which is what many Intel machines have selected.
+if xcodebuild -version >/dev/null 2>&1; then
+    GENERATOR="Xcode"
+else
+    GENERATOR="Unix Makefiles"
+    echo "Full Xcode is not selected. Using the command line compiler instead."
+    echo "If Xcode.app is installed, point xcode-select at it for the Xcode generator:"
+    echo "  sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"
 fi
 
-cmake -S "${PROJECT_DIR}" -B "${BUILD_DIR}" -G Xcode \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
-    -DCMAKE_OSX_DEPLOYMENT_TARGET="10.15"
+configure_and_build() {
+    local archs="$1"
+    local force_clean="$2"
 
-cmake --build "${BUILD_DIR}" --config Release --target VidSyncVST_VST3 --parallel
+    if [[ "${force_clean}" == "1" ]]; then
+        rm -rf "${BUILD_DIR}"
+    elif [[ -f "${BUILD_DIR}/CMakeCache.txt" ]]; then
+        local cache_gen cache_home cache_archs
+        cache_gen="$(sed -n 's/^CMAKE_GENERATOR:INTERNAL=//p' "${BUILD_DIR}/CMakeCache.txt")"
+        cache_home="$(sed -n 's/^CMAKE_HOME_DIRECTORY:INTERNAL=//p' "${BUILD_DIR}/CMakeCache.txt")"
+        cache_archs="$(sed -n 's/^CMAKE_OSX_ARCHITECTURES:[^=]*=//p' "${BUILD_DIR}/CMakeCache.txt")"
+        if [[ "${cache_gen}" != "${GENERATOR}" || "${cache_home}" != "${PROJECT_DIR}" || "${cache_archs}" != "${archs}" ]]; then
+            echo "Removing incompatible CMake cache in ${BUILD_DIR}"
+            rm -rf "${BUILD_DIR}"
+        fi
+    elif [[ -d "${BUILD_DIR}" ]]; then
+        rm -rf "${BUILD_DIR}"
+    fi
 
-BUILT_VST3="$(find "${BUILD_DIR}" -type d -name "VidSyncVST.vst3" -print -quit)"
-if [[ -z "${BUILT_VST3}" ]]; then
+    cmake -S "${PROJECT_DIR}" -B "${BUILD_DIR}" -G "${GENERATOR}" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_OSX_ARCHITECTURES="${archs}" \
+        -DCMAKE_OSX_DEPLOYMENT_TARGET="10.15" || return 1
+
+    cmake --build "${BUILD_DIR}" --config Release --target VidSyncVST_VST3 --parallel || return 1
+}
+
+find_built_binary() {
+    BUILT_VST3="$(find "${BUILD_DIR}" -type d -name "VidSyncVST.vst3" -print -quit)"
+    BINARY=""
+    if [[ -n "${BUILT_VST3}" ]]; then
+        BINARY="$(find "${BUILT_VST3}/Contents/MacOS" -maxdepth 1 -type f -print -quit || true)"
+    fi
+}
+
+has_intel_slice() {
+    [[ -n "${BINARY}" ]] && lipo "${BINARY}" -verify_arch x86_64 >/dev/null 2>&1
+}
+
+if ! configure_and_build "arm64;x86_64" 0; then
+    echo "Universal build failed. Building x86_64 only so Reason 13 can open the plug-in on this Intel Mac."
+    configure_and_build "x86_64" 1 || exit 1
+fi
+
+find_built_binary
+if ! has_intel_slice; then
+    echo "This binary has no x86_64 slice. Reason 13 on an Intel Mac cannot load an arm64-only plug-in."
+    echo "Rebuilding x86_64."
+    configure_and_build "x86_64" 1 || exit 1
+    find_built_binary
+fi
+
+if [[ -z "${BUILT_VST3}" || -z "${BINARY}" ]]; then
     echo "ERROR: VidSyncVST.vst3 was not produced."
     exit 1
 fi
 
-BINARY="$(find "${BUILT_VST3}/Contents/MacOS" -maxdepth 1 -type f -print -quit || true)"
-if [[ -n "${BINARY}" ]] && command -v lipo >/dev/null 2>&1; then
-    echo "Built architectures: $(lipo -archs "${BINARY}")"
+if ! has_intel_slice; then
+    echo "ERROR: ${BINARY} has no x86_64 slice, so Reason 13 on an Intel Mac will not open it."
+    exit 1
 fi
+
+echo "Built architectures: $(lipo -archs "${BINARY}")"
 
 install_bundle() {
     local dest_dir="$1"
@@ -99,4 +148,5 @@ if [[ -d "${USER_VST3_DIR}/VidSyncVST.vst3" ]]; then
 fi
 
 echo "Installed: ${installed_dir}/VidSyncVST.vst3"
-echo "Quit and relaunch Reason 13 so it scans VST3 plug-ins."
+echo "Quit and relaunch Reason 13. On an Intel Mac, confirm the binary includes x86_64:"
+echo "  lipo -info \"${installed_dir}/VidSyncVST.vst3/Contents/MacOS/VidSyncVST\""
