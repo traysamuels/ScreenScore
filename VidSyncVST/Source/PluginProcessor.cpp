@@ -63,8 +63,12 @@ void VidSyncAudioProcessor::releaseResources() {}
 bool VidSyncAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
     const auto& input = layouts.getMainInputChannelSet();
     const auto& output = layouts.getMainOutputChannelSet();
-    return input == juce::AudioChannelSet::stereo()
-        && output == juce::AudioChannelSet::stereo();
+    // Reason probes channel layouts while opening the device. The default
+    // layout stays stereo; mono is accepted when the host asks for it.
+    if (input != output)
+        return false;
+    return input == juce::AudioChannelSet::mono()
+        || input == juce::AudioChannelSet::stereo();
 }
 
 void VidSyncAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) {

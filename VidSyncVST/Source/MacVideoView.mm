@@ -45,6 +45,9 @@ struct MacVideoBackend::Impl {
     int videoHeight { 0 };
     bool loaded { false };
     bool wasHostPlaying { false };
+    bool hasRequestedSeek { false };
+    double lastSeekTarget { 0.0 };
+    double lastSeekWallSeconds { -1.0 };
 
     Impl() {
         @autoreleasepool {
@@ -78,7 +81,10 @@ struct MacVideoBackend::Impl {
             [player replaceCurrentItemWithPlayerItem:playerItem];
 
             CMTime dur = asset.duration;
-            durationSeconds = CMTimeGetSeconds(dur);
+            if (CMTIME_IS_NUMERIC(dur))
+                durationSeconds = CMTimeGetSeconds(dur);
+            else
+                durationSeconds = 0.0;
 
             NSArray<AVAssetTrack*>* tracks = [asset tracksWithMediaType:AVMediaTypeVideo];
             if (tracks.count > 0) {
@@ -91,6 +97,7 @@ struct MacVideoBackend::Impl {
             }
 
             loaded = true;
+            hasRequestedSeek = false;
             return true;
         }
     }
@@ -101,36 +108,43 @@ struct MacVideoBackend::Impl {
 
             double targetTime = dawSeconds - offsetSeconds;
             if (targetTime < 0.0) targetTime = 0.0;
-            if (durationSeconds > 0.0 && targetTime > durationSeconds) targetTime = durationSeconds;
+            if (std::isfinite(durationSeconds) && durationSeconds > 0.0 && targetTime > durationSeconds)
+                targetTime = durationSeconds;
 
+            const double now = CFAbsoluteTimeGetCurrent();
+            double currentVideoTime = CMTimeGetSeconds(player.currentTime);
+            const bool currentValid = std::isfinite(currentVideoTime);
+            const double drift = currentValid ? std::abs(currentVideoTime - targetTime) : 1.0e9;
             CMTime cmTarget = CMTimeMakeWithSeconds(targetTime, 60000);
 
+            // The UI calls this at 60 Hz. Seeking on every call, including when
+            // the target has not moved, cancels AVPlayer and the picture never
+            // settles or plays. Seek only when transport state or the requested
+            // time actually changes, and rate-limit corrections while rolling.
             if (isPlaying) {
-                double currentVideoTime = CMTimeGetSeconds(player.currentTime);
-                double drift = std::abs(currentVideoTime - targetTime);
-
-                if (!wasHostPlaying || drift > 0.04) {
-                    [player seekToTime:cmTarget
-                       toleranceBefore:kCMTimeZero
-                        toleranceAfter:kCMTimeZero
-                     completionHandler:^(BOOL) {
-                         [player play];
-                         [player setRate:1.0f];
-                     }];
-                } else if (player.rate == 0.0f) {
-                    [player play];
-                    [player setRate:1.0f];
+                const bool cooldownElapsed = (now - lastSeekWallSeconds) > 0.30;
+                if ((!wasHostPlaying || drift > 0.15) && cooldownElapsed) {
+                    CMTime tolerance = CMTimeMakeWithSeconds(0.08, 600);
+                    [player seekToTime:cmTarget toleranceBefore:tolerance toleranceAfter:tolerance];
+                    lastSeekWallSeconds = now;
+                    lastSeekTarget = targetTime;
+                    hasRequestedSeek = true;
                 }
+                if (player.rate < 0.05f)
+                    [player play];
                 wasHostPlaying = true;
             } else {
-                if (wasHostPlaying) {
+                if (wasHostPlaying || player.rate > 0.05f)
                     [player pause];
-                    wasHostPlaying = false;
-                }
+                wasHostPlaying = false;
 
-                [player seekToTime:cmTarget
-                   toleranceBefore:kCMTimeZero
-                    toleranceAfter:kCMTimeZero];
+                const bool targetMoved = !hasRequestedSeek || std::abs(targetTime - lastSeekTarget) > 0.02;
+                if (targetMoved) {
+                    [player seekToTime:cmTarget toleranceBefore:kCMTimeZero toleranceAfter:kCMTimeZero];
+                    lastSeekTarget = targetTime;
+                    lastSeekWallSeconds = now;
+                    hasRequestedSeek = true;
+                }
             }
         }
     }
@@ -141,6 +155,9 @@ struct MacVideoBackend::Impl {
             if (targetSeconds < 0.0) targetSeconds = 0.0;
             CMTime cmTarget = CMTimeMakeWithSeconds(targetSeconds, 60000);
             [player seekToTime:cmTarget toleranceBefore:kCMTimeZero toleranceAfter:kCMTimeZero];
+            lastSeekTarget = targetSeconds;
+            lastSeekWallSeconds = CFAbsoluteTimeGetCurrent();
+            hasRequestedSeek = true;
         }
     }
 

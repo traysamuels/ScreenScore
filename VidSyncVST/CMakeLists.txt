@@ -1,15 +1,23 @@
 cmake_minimum_required(VERSION 3.22)
+
+# Set architectures before project() so the generated Xcode project actually
+# compiles them. Reason 13 on an Intel Mac loads the x86_64 slice; an
+# arm64-only binary will not open there. The build script may pass x86_64
+# alone when the Mac cannot compile arm64.
+if(APPLE)
+    if(NOT CMAKE_OSX_ARCHITECTURES)
+        set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "macOS architectures" FORCE)
+    endif()
+    if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "Minimum macOS version" FORCE)
+    endif()
+endif()
+
 project(VidSyncVST VERSION 1.0.1 LANGUAGES C CXX OBJCXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-
-if (APPLE)
-    # Build a universal macOS plug-in for Apple Silicon and Intel hosts.
-    set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Universal macOS architectures" FORCE)
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "Minimum macOS version" FORCE)
-endif()
 
 include(FetchContent)
 FetchContent_Declare(
@@ -30,6 +38,7 @@ juce_add_plugin(VidSyncVST
     PLUGIN_MANUFACTURER_CODE Vdsy
     PLUGIN_CODE Vds1
     FORMATS VST3
+    VST3_CATEGORIES Fx
     PRODUCT_NAME "VidSyncVST"
     DESCRIPTION "Video playback synchronized to the Reason 13 transport"
 )

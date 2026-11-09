@@ -1,11 +1,27 @@
 name: Build VidSyncVST macOS VST3
 
+# contents: write lets this workflow publish the built plug-in as a Release asset.
+permissions:
+  contents: write
+
+concurrency:
+  group: vidsync-macos-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - "cursor/**"
     paths:
       - "VidSyncVST/**"
       - ".github/workflows/build-dmg.yml"
+      - "README.md"
+  pull_request:
+    paths:
+      - "VidSyncVST/**"
+      - ".github/workflows/build-dmg.yml"
+      - "README.md"
   workflow_dispatch:
 
 jobs:
@@ -15,27 +31,27 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Configure CMake
+      - name: Timecode checks
         run: |
-          cmake -S VidSyncVST -B build -G Xcode \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET="10.15"
+          c++ -std=c++17 -Wall -Wextra -Werror -I VidSyncVST/Source \
+            VidSyncVST/tests/timecode_test.cpp -o /tmp/timecode_test
+          /tmp/timecode_test
 
-      - name: Build VST3
-        run: cmake --build build --config Release --target VidSyncVST_VST3 --parallel
+      - name: Build and install VST3
+        run: bash VidSyncVST/build_mac.sh
 
       - name: Validate universal VST3 bundle
         shell: bash
         run: |
           set -euo pipefail
-          VST3_PATH="$(find build -type d -name 'VidSyncVST.vst3' -print -quit)"
+          VST3_PATH="$(find VidSyncVST/build -type d -name 'VidSyncVST.vst3' -print -quit)"
           test -n "$VST3_PATH"
           BINARY="$(find "$VST3_PATH/Contents/MacOS" -maxdepth 1 -type f -print -quit)"
           test -n "$BINARY"
           plutil -lint "$VST3_PATH/Contents/Info.plist"
           # Apple's lipo syntax expects the input file before -verify_arch.
           lipo "$BINARY" -verify_arch arm64 x86_64
+          test -d "/Library/Audio/Plug-Ins/VST3/VidSyncVST.vst3"
           echo "Validated: $VST3_PATH"
           ditto "$VST3_PATH" VidSyncVST.vst3
 
@@ -47,11 +63,45 @@ jobs:
           hdiutil create -volname "VidSyncVST Installer" \
             -srcfolder dmg_root -ov -format UDZO VidSyncVST_Mac.dmg
 
+      - name: Zip VST3 bundle
+        run: ditto -c -k --keepParent VidSyncVST.vst3 VidSyncVST.vst3.zip
+
       - name: Upload VST3 and DMG
         uses: actions/upload-artifact@v4
         with:
           name: VidSyncVST-macOS-Universal
           path: |
-            VidSyncVST.vst3
+            VidSyncVST.vst3.zip
             VidSyncVST_Mac.dmg
           if-no-files-found: error
+
+      - name: Publish GitHub Release
+        # pull_request tokens are often read-only. The push run for this branch
+        # publishes the Release; the pull_request run still uploads the artifact.
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          TAG="vidsync-vst3"
+          NOTES="Universal macOS VST3 (x86_64 + arm64) for Reason 13.
+
+          No Xcode or CMake is required.
+
+          1. Download VidSyncVST_Mac.dmg (or VidSyncVST.vst3.zip).
+          2. Open the DMG and drag VidSyncVST.vst3 onto the VST3 folder, or unzip the zip and copy the VidSyncVST.vst3 folder to /Library/Audio/Plug-Ins/VST3/.
+          3. Clear quarantine: xattr -dr com.apple.quarantine /Library/Audio/Plug-Ins/VST3/VidSyncVST.vst3
+          4. Quit and relaunch Reason. Enable Show VST3 plugins. Open Effects > VST3 Plugins > VidSync > VidSyncVST.
+
+          Built from ${RELEASE_SHA}."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" --yes --cleanup-tag
+          fi
+          gh release create "$TAG" \
+            --target "$RELEASE_SHA" \
+            --title "VidSyncVST macOS universal" \
+            --notes "$NOTES" \
+            VidSyncVST.vst3.zip \
+            VidSyncVST_Mac.dmg
+          echo "Release: https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}"

@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
+#include "TimecodeMath.h"
 
 class TimecodeCalculator {
 public:
@@ -16,18 +17,11 @@ public:
     }
 
     static juce::String formatSMPTE(double seconds, double fps) {
-        if (seconds < 0.0) seconds = 0.0;
-        int totalFrames = static_cast<int>(seconds * fps + 0.0001);
-
-        int f = totalFrames % static_cast<int>(fps);
-        int totalSeconds = totalFrames / static_cast<int>(fps);
-
-        int s = totalSeconds % 60;
-        int totalMinutes = totalSeconds / 60;
-
-        int m = totalMinutes % 60;
-        int h = totalMinutes / 60;
-
-        return juce::String::formatted("%02d:%02d:%02d:%02d", h, m, s, f);
+        const SmpteParts parts = smpteFromSeconds(seconds, fps);
+        return juce::String::formatted("%02d:%02d:%02d:%02d",
+                                       parts.hours,
+                                       parts.minutes,
+                                       parts.seconds,
+                                       parts.frames);
     }
 };
