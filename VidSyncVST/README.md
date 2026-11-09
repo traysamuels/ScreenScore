@@ -6,6 +6,25 @@ Because Reason 13 lacks a built-in video sequencer track, VidSyncVST acts as you
 
 ---
 
+## Install on an Intel Mac (no Xcode)
+
+GitHub Actions builds the universal `VidSyncVST.vst3` (`x86_64` + `arm64`). Download it and copy it into Reason's VST3 folder. Xcode and CMake are not required.
+
+1. Download [VidSyncVST_Mac.dmg](https://github.com/traysamuels/ScreenScore/releases/download/vidsync-vst3/VidSyncVST_Mac.dmg) or [VidSyncVST.vst3.zip](https://github.com/traysamuels/ScreenScore/releases/download/vidsync-vst3/VidSyncVST.vst3.zip) from the **VidSyncVST macOS universal** release. The same files are the **VidSyncVST-macOS-Universal** artifact on each [macOS workflow run](https://github.com/traysamuels/ScreenScore/actions/workflows/build-dmg.yml).
+2. Open the DMG and drag `VidSyncVST.vst3` onto **Drag to VST3 Folder**, or unzip the zip and copy the `VidSyncVST.vst3` folder to `/Library/Audio/Plug-Ins/VST3/`. That is the folder Reason 13 scans. macOS asks for an administrator password.
+3. Clear quarantine so Reason can open the downloaded plug-in:
+
+   ```bash
+   xattr -dr com.apple.quarantine /Library/Audio/Plug-Ins/VST3/VidSyncVST.vst3
+   lipo -info /Library/Audio/Plug-Ins/VST3/VidSyncVST.vst3/Contents/MacOS/VidSyncVST
+   ```
+
+   `lipo` must list `x86_64` for an Intel Mac.
+4. In Reason, keep `/Library/Audio/Plug-Ins/VST3` enabled under **Settings > Folders**, tick **Show VST3 plugins**, then quit and relaunch Reason.
+5. Open **Effects > VST3 Plugins > VidSync > VidSyncVST**, drag it into the rack, and click **Open Plugin Window**.
+
+---
+
 ## Key Features vs. VidPlayVST
 
 | Feature | VidSyncVST (Our Plugin) | VidPlayVST |
@@ -54,9 +73,9 @@ VidSyncVST/
 
 ---
 
-## 1-Command Build & Installation
+## Optional local build
 
-Open Terminal, navigate to the `VidSyncVST` directory, and run:
+The download above is the install path when Xcode is not installed. To compile on a Mac that already has Xcode or the Command Line Tools, plus CMake 3.22+ and Git, run this from the `VidSyncVST` directory:
 
 ```bash
 chmod +x build_mac.sh
@@ -72,31 +91,6 @@ This script will:
    `/Library/Audio/Plug-Ins/VST3/`
 
    Reason 13 does not scan `~/Library/Audio/Plug-Ins/VST3` unless you add that folder yourself. Writing to the system folder asks for an administrator password when needed. This project installs a VST3 bundle, which Reason 13 loads. It does not build a legacy `.vst` plug-in.
-
----
-
-## Open it in Reason 13 on an Intel Mac
-
-Reason 13 requires macOS 10.15 or later and a 64-bit Intel (`x86_64`) plug-in.
-
-1. Run `./build_mac.sh` on the Intel Mac. The script must print `x86_64` in `Built architectures`.
-2. Confirm the installed binary:
-
-   ```bash
-   lipo -info /Library/Audio/Plug-Ins/VST3/VidSyncVST.vst3/Contents/MacOS/VidSyncVST
-   ```
-
-   `x86_64` has to be in that list. `arm64` is the Apple Silicon slice and is optional for an Intel machine.
-3. If the `.vst3` was downloaded in a browser (DMG or zip), clear the quarantine flag before Reason scans it:
-
-   ```bash
-   xattr -dr com.apple.quarantine /Library/Audio/Plug-Ins/VST3/VidSyncVST.vst3
-   ```
-
-4. In Reason, open **Settings > Folders** and leave `/Library/Audio/Plug-Ins/VST3` enabled.
-5. Open the browser menu and tick **Show VST3 plugins**.
-6. Quit Reason completely and launch it again. Reason scans plug-ins at startup.
-7. In the browser, open **Effects > VST3 Plugins > VidSync > VidSyncVST**, drag it into the rack, and click **Open Plugin Window**.
 
 ---
 
